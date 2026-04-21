@@ -894,34 +894,72 @@
             if (!isAdmin) return;
             showMessage("Generando archivo Excel...");
 
-            // 1. Preparar los datos de Nodos
-            const allNodes = nodes.get().map(n => ({
+            // Obtenemos los datos actuales
+            const allNodesArray = nodes.get();
+            const allEdgesArray = edges.get();
+
+            // 1. Preparar los datos de Nodos (Hoja 1)
+            const allNodes = allNodesArray.map(n => ({
                 ID: n.id,
                 Nombre: n.name,
                 Correo: n.email,
                 Tipo: n.type === 'group' ? 'grupo' : 'usuario'
             }));
 
-            // 2. Preparar los datos de Conexiones
-            const allEdges = edges.get().map(e => ({
+            // 2. Preparar los datos de Conexiones crudas (Hoja 2)
+            const allEdges = allEdgesArray.map(e => ({
                 ID_Origen: e.from,
                 ID_Destino: e.to
             }));
 
-            // 3. Crear el libro de trabajo (Workbook) y las hojas (Worksheets)
+            // 3. NUEVO: Preparar Listado Limpio (Nombre del Grupo y Nombre de Usuario)
+            const groupsAndMembers = [];
+            const groups = allNodesArray.filter(n => n.type === 'group');
+            
+            groups.forEach(group => {
+                // Buscamos las conexiones que salen de este grupo
+                const membersEdges = allEdgesArray.filter(e => e.from === group.id);
+                
+                if (membersEdges.length === 0) {
+                    // Si el grupo está vacío
+                    groupsAndMembers.push({
+                        "Nombre del Grupo": group.name,
+                        "Nombre de Usuario": "(Sin usuarios asignados)"
+                    });
+                } else {
+                    // Si tiene miembros, solo extraemos los nombres
+                    membersEdges.forEach(edge => {
+                        const memberNode = allNodesArray.find(n => n.id === edge.to);
+                        if (memberNode) {
+                            groupsAndMembers.push({
+                                "Nombre del Grupo": group.name,
+                                "Nombre de Usuario": memberNode.name
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Ordenamos alfabéticamente por nombre de grupo
+            groupsAndMembers.sort((a, b) => a["Nombre del Grupo"].localeCompare(b["Nombre del Grupo"]));
+
+            // 4. Crear el libro de trabajo (Workbook) y las hojas
             const wb = XLSX.utils.book_new();
             const wsNodes = XLSX.utils.json_to_sheet(allNodes);
             const wsEdges = XLSX.utils.json_to_sheet(allEdges);
+            const wsGroupsMembers = XLSX.utils.json_to_sheet(groupsAndMembers);
 
-            // Ajustar el ancho de las columnas para que se vea mejor
+            // Ajustar el ancho de las columnas (Hacemos las del listado más anchas para que los nombres quepan bien)
             wsNodes['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 30 }, { wch: 10 }];
             wsEdges['!cols'] = [{ wch: 25 }, { wch: 25 }];
+            wsGroupsMembers['!cols'] = [{ wch: 35 }, { wch: 35 }]; // Columnas amplias para los nombres
 
-            // Añadir las hojas al libro
-            XLSX.utils.book_append_sheet(wb, wsNodes, "Nodos");
-            XLSX.utils.book_append_sheet(wb, wsEdges, "Relaciones");
+            // Añadir las hojas al archivo final
+            XLSX.utils.book_append_sheet(wb, wsNodes, "Nodos (Técnico)");
+            XLSX.utils.book_append_sheet(wb, wsEdges, "Relaciones (Técnico)");
+            XLSX.utils.book_append_sheet(wb, wsGroupsMembers, "Directorio por Grupos");
 
-            // 4. Descargar el archivo
+            // 5. Descargar el archivo
             XLSX.writeFile(wb, "Organigrama_Flujo_Correos.xlsx");
         };
 
